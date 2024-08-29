@@ -10,6 +10,8 @@ use App\Models\IncomingMessage;
 use App\Models\IncomingMessageLog;
 use App\Action\CheckSum\CheckSum;
 use App\Action\Log\LogError;
+use App\Action\Common\CommonTask;
+use Illuminate\Http\Request;
 
 class RegistrationController extends Controller
 {
@@ -54,21 +56,24 @@ class RegistrationController extends Controller
             $validateCheckSumNum = CheckSum::isChecksumValid($checksum, $originalCheckSumNum);
             $validateCheckSumEmail = CheckSum::isChecksumValid($checksum, $originalCheckSumEmail);
 
+            $logModel = new IncomingMessageLog();
+            $messageModel = new IncomingMessage();
+
+            $data = $request->validated();
+            $data['profile_name'] = $data['pname'];
+            $data['mobile_number'] = $data['mno'];
+            unset($data['pname']);
+            unset($data['mno']);
+            $logData = CommonTask::pushData($data, $logModel);
+            $data['log_id'] = $logData->log_id;
+            $messageData = CommonTask::pushData($data, $messageModel);
+
+            $incomingLog = IncomingMessageLog::where('log_id', $data['log_id'])->first();
+            $incomingMessage = IncomingMessage::where('log_id', $data['log_id'])->first();
+
             //Check if checkSum is valid
             if ($validateCheckSumNum > 0 || $validateCheckSumEmail > 0) {
                 $registration = Registration::create($request->validated());
-
-                $incomingMessage = IncomingMessage::create([
-                    'profile_name' => $request->pname,
-                    'email' => $request->email,
-                    'tdate' => $request->tdate,
-                    'echannel' => $request->echannel,
-                    'trace_id' => $request->trace_id,
-                    'mobile_number' => $request->mobile_number,
-                    'txn_type' => $request->txn_type,
-                    'country_code' => $request->country_code,
-                    'mobile_network' => $request->mno
-                ]);
 
                 $response = response()->json([
                     'status' => 'success',
@@ -77,16 +82,36 @@ class RegistrationController extends Controller
                     'data' => $registration
                 ]);
 
-                IncomingMessageLog::create([
-                    'incoming_messages_id' => $incomingMessage->inc_messages_id,
+                $incomingLog->update([
                     'request_url' => $request->url(),
                     'response_url' => $request->fullUrl(),
                     'response_code' => $response->status(),
-                    'response_message' => $response->getData()->message
+                    'response_message' => $response->getData()->message,
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'success'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'success'
                 ]);
 
                 return $response;
             } else {
+                $incomingLog->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'failed'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'failed'
+                ]);
+
                 return LogError::createLogError($request, 'Invalid CheckSum try again');
             }
         } catch (\Exception $ex) {
@@ -94,18 +119,22 @@ class RegistrationController extends Controller
         }
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
-            $registration = Registration::with(['incomingMessage'])
+            $registration = Registration::query()
                 ->where('id', $id)
+                ->orWhere('trace_id', $id)
                 ->first();
 
             if (empty($registration)) {
+                $msg = 'Registration not found';
+                LogError::createLogError($request, $msg);
+
                 return response()->json([
                     'status' => 'failed',
                     'status_code' => 422,
-                    'message' => 'Registration not found'
+                    'message' => $msg
                 ], 422);
             }
 
@@ -125,13 +154,17 @@ class RegistrationController extends Controller
         try {
             $registration = Registration::query()
                 ->where('id', $id)
+                ->orWhere('trace_id', $id)
                 ->first();
 
             if (empty($registration)) {
+                $msg = 'Registration not found';
+                LogError::createLogError($request, $msg);
+
                 return response()->json([
                     'status' => 'failed',
                     'status_code' => 422,
-                    'message' => 'Registration not found'
+                    'message' => $msg
                 ], 422);
             }
 
@@ -155,21 +188,24 @@ class RegistrationController extends Controller
             $validateCheckSumNum = CheckSum::isChecksumValid($checksum, $originalCheckSumNum);
             $validateCheckSumEmail = CheckSum::isChecksumValid($checksum, $originalCheckSumEmail);
 
+            $logModel = new IncomingMessageLog();
+            $messageModel = new IncomingMessage();
+
+            $data = $request->validated();
+            $data['profile_name'] = $data['pname'];
+            $data['mobile_number'] = $data['mno'];
+            unset($data['pname']);
+            unset($data['mno']);
+            $logData = CommonTask::pushData($data, $logModel);
+            $data['log_id'] = $logData->log_id;
+            $messageData = CommonTask::pushData($data, $messageModel);
+
+            $incomingLog = IncomingMessageLog::where('log_id', $data['log_id'])->first();
+            $incomingMessage = IncomingMessage::where('log_id', $data['log_id'])->first();
+
             //Check if checkSum is valid
             if ($validateCheckSumNum > 0 || $validateCheckSumEmail > 0) {
                 $registration->update($request->validated());
-
-                $incomingMessage = IncomingMessage::create([
-                    'profile_name' => $request->pname,
-                    'email' => $request->email,
-                    'tdate' => $request->tdate,
-                    'echannel' => $request->echannel,
-                    'trace_id' => $request->trace_id,
-                    'mobile_number' => $request->mobile_number,
-                    'txn_type' => $request->txn_type,
-                    'country_code' => $request->country_code,
-                    'mobile_network' => $request->mno
-                ]);
 
                 $response = response()->json([
                     'status' => 'success',
@@ -177,16 +213,36 @@ class RegistrationController extends Controller
                     'message' => 'Registration updated successfully'
                 ]);
 
-                IncomingMessageLog::create([
-                    'incoming_messages_id' => $incomingMessage->inc_messages_id,
+                $incomingLog->update([
                     'request_url' => $request->url(),
                     'response_url' => $request->fullUrl(),
                     'response_code' => $response->status(),
-                    'response_message' => $response->getData()->message
+                    'response_message' => $response->getData()->message,
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'success'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'success'
                 ]);
 
                 return $response;
             } else {
+                $incomingLog->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'failed'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => ($validateCheckSumNum === 1) ? $originalCheckSumNum : $originalCheckSumEmail,
+                    'checksum_status' => 'failed'
+                ]);
+
                 return LogError::createLogError($request, 'Invalid CheckSum try again');
             }
         } catch (\Exception $ex) {

@@ -38,20 +38,44 @@ class Handler extends ExceptionHandler
         $date = new DateTime();
         $formattedDate = $date->format('d-m-Y');
 
-        if ($exception instanceof ValidationException) {
-            $incomingMessage = IncomingMessage::create([
-                'tdate' => $formattedDate,
-                'email' => $request->user()->email ?? '',
-                'mobile_number' => $request->user()->phone ?? '',
-                'profile_name' => $request->user()->name ?? ''
-            ]);
+        // Initialize variables for logging
+        $responseMessage = '';
 
-            IncomingMessageLog::create([
-                'incoming_messages_id' => $incomingMessage->inc_messages_id,
+        // Check if the exception is a ValidationException
+        if ($exception instanceof ValidationException) {
+            $responseMessage = json_encode($exception->errors());
+
+            $log = IncomingMessageLog::create([
                 'request_url' => $request->url(),
                 'response_url' => $request->fullUrl(),
                 'response_code' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'response_message' => json_encode($exception->errors()),
+                'response_message' => $responseMessage,
+            ]);
+
+            IncomingMessage::create([
+                'log_id' => $log->log_id,
+                'tdate' => $formattedDate,
+                'email' => $request->user()->email ?? '',
+                'mobile_number' => $request->user()->phone ?? '',
+                'profile_name' => $request->user()->name ?? '',
+            ]);
+        } else {
+            // Handle non-validation exceptions
+            $responseMessage = $exception->getMessage();
+
+            $log = IncomingMessageLog::create([
+                'request_url' => $request->url(),
+                'response_url' => $request->fullUrl(),
+                'response_code' => Response::HTTP_INTERNAL_SERVER_ERROR,
+                'response_message' => $responseMessage,
+            ]);
+
+            IncomingMessage::create([
+                'log_id' => $log->log_id,
+                'tdate' => $formattedDate,
+                'email' => $request->user()->email ?? '',
+                'mobile_number' => $request->user()->phone ?? '',
+                'profile_name' => $request->user()->name ?? '',
             ]);
         }
 
@@ -60,21 +84,26 @@ class Handler extends ExceptionHandler
 
     protected function unauthenticated($request, \Illuminate\Auth\AuthenticationException $exception)
     {
-        $date = new DateTime();
-        $formattedDate = $date->format('d-m-Y');
+        try {
+            $date = new DateTime();
+            $formattedDate = $date->format('d-m-Y');
 
-        $incomingMessage = IncomingMessage::create([
-            'tdate' => $formattedDate
-        ]);
+            $log = IncomingMessageLog::create([
+                'request_url' => $request->url(),
+                'response_code' => 401,
+                'response_message' => 'Unauthenticated, kindly provide a valid token.',
+                'response_url' => $request->fullUrl(),
+            ]);
 
-        IncomingMessageLog::create([
-            'request_url' => $request->url(),
-            'response_code' => 401,
-            'response_message' => 'Unauthenticated, kindly provide a valid token.',
-            'incoming_messages_id' => $incomingMessage->inc_messages_id,
-            'response_url' => $request->fullUrl(),
-        ]);
+            IncomingMessage::create([
+                'log_id' => $log->log_id,
+                'tdate' => $formattedDate,
+            ]);
 
-        return response()->json(['message' => 'Unauthenticated, kindly provide a valid token.'], 401);
+            return response()->json(['message' => 'Unauthenticated, kindly provide a valid token.'], 401);
+        } catch (\Exception $e) {
+            // Log the error or handle it as needed
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 }

@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 
 class LoginController extends Controller
@@ -44,13 +45,19 @@ class LoginController extends Controller
 
             session()->regenerate();
 
+            $token = explode('|', $user->createToken('auth_token')->plainTextToken, 2)[1];
+
+            $user->tokens()->where('id', $user->tokens()->latest()->first()->id)
+                ->update(['expires_at' => Carbon::now()->addMinutes(env('TOKEN_EXPIRATION_TIME'))]);
+
             return response()->json([
                 'status' => 'success',
                 'status_code' => 200,
                 'message' => 'User logged in successfully',
                 'data' => $user,
                 'meta' => [
-                    'token' => explode('|', $user->createToken('auth_token')->plainTextToken, 2)[1],
+                    'token' => $token,
+                    'timeout' => env('TOKEN_EXPIRATION_TIME') * 60
                 ],
             ]);
         } catch (\Exception $ex) {

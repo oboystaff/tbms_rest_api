@@ -10,15 +10,29 @@ use App\Models\IncomingMessage;
 use App\Models\IncomingMessageLog;
 use App\Action\CheckSum\CheckSum;
 use App\Action\Log\LogError;
+use App\Action\Common\CommonTask;
+use Illuminate\Http\Request;
 
 class ApplicationController extends Controller
 {
-    public function index()
+    public function index(Request $request, $login_id)
     {
         try {
             $data = Application::with(['incomingMessage'])
                 ->orderBy('created_at', 'DESC')
+                ->where('login_id', $login_id)
                 ->get();
+
+            if (count($data) == 0) {
+                $msg = 'Application not found';
+                LogError::createLogError($request, $msg);
+
+                return response()->json([
+                    'status' => 'failed',
+                    'status_code' => 422,
+                    'message' => $msg
+                ], 422);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -50,33 +64,25 @@ class ApplicationController extends Controller
 
             $validateCheckSumNum = CheckSum::isChecksumValid($checksum, $originalCheckSumNum);
 
+            $logModel = new IncomingMessageLog();
+            $messageModel = new IncomingMessage();
+
+            $data = $request->validated();
+            $data['nok_contact'] = $data['next_of_kin_contact'];
+            $data['funding_source'] = $data['fsource'];
+            $data['maturity_date'] = $data['mat_date'];
+            unset($data['next_of_kin_contact']);
+            unset($data['fsource']);
+            unset($data['mat_date']);
+            $logData = CommonTask::pushData($data, $logModel);
+            $data['log_id'] = $logData->log_id;
+            $messageData = CommonTask::pushData($data, $messageModel);
+
+            $incomingLog = IncomingMessageLog::where('log_id', $data['log_id'])->first();
+            $incomingMessage = IncomingMessage::where('log_id', $data['log_id'])->first();
+
             if ($validateCheckSumNum > 0) {
                 $application = Application::create($request->validated());
-
-                $incomingMessage = IncomingMessage::create([
-                    'acct_no' => $request->acct_no,
-                    'login_id' => $request->login_id,
-                    'tdate' => $request->tdate,
-                    'sec_code' => $request->sec_code,
-                    'amt' => $request->amt,
-                    'next_of_kin' => $request->next_of_kin,
-                    'nok_contact' => $request->next_of_kin_contact,
-                    'trace_id' => $request->trace_id,
-                    'bank_code' => $request->bank_code,
-                    'txn_type' => $request->txn_type,
-                    'country_code' => $request->country_code,
-                    'echannel' => $request->echannel,
-                    'funding_source' => $request->fsource,
-                    'app_module' => $request->app_module,
-                    'mobile_network' => $request->mno,
-                    'cost' => $request->cost,
-                    'face_value' => $request->face_value,
-                    'int_rate' => $request->int_rate,
-                    'disc_rate' => $request->disc_rate,
-                    'value_date' => $request->value_date,
-                    'maturity_date' => $request->mat_date,
-                    'inv_amt_type' => $request->inv_amt_type
-                ]);
 
                 $response = response()->json([
                     'status' => 'success',
@@ -85,16 +91,36 @@ class ApplicationController extends Controller
                     'data' => $application
                 ]);
 
-                IncomingMessageLog::create([
-                    'incoming_messages_id' => $incomingMessage->inc_messages_id,
+                $incomingLog->update([
                     'request_url' => $request->url(),
                     'response_url' => $request->fullUrl(),
                     'response_code' => $response->status(),
-                    'response_message' => $response->getData()->message
+                    'response_message' => $response->getData()->message,
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'success'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'success'
                 ]);
 
                 return $response;
             } else {
+                $incomingLog->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'failed'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'failed'
+                ]);
+
                 return LogError::createLogError($request, 'Invalid CheckSum try again');
             }
         } catch (\Exception $ex) {
@@ -102,19 +128,23 @@ class ApplicationController extends Controller
         }
     }
 
-    public function show($id)
+    public function show(Request $request, $login_id, $acct_no, $trace_id)
     {
         try {
             $application = Application::with(['incomingMessage'])
-                ->where('id', $id)
-                ->orWhere('acct_no', $id)
+                ->where('login_id', $login_id)
+                ->where('acct_no', $acct_no)
+                ->where('trace_id', $trace_id)
                 ->first();
 
             if (empty($application)) {
+                $msg = 'Application not found';
+                LogError::createLogError($request, $msg);
+
                 return response()->json([
                     'status' => 'failed',
                     'status_code' => 422,
-                    'message' => 'Application not found'
+                    'message' => $msg
                 ], 422);
             }
 
@@ -138,10 +168,13 @@ class ApplicationController extends Controller
                 ->first();
 
             if (empty($application)) {
+                $msg = 'Application not found';
+                LogError::createLogError($request, $msg);
+
                 return response()->json([
                     'status' => 'failed',
                     'status_code' => 422,
-                    'message' => 'Application not found'
+                    'message' => $msg
                 ], 422);
             }
 
@@ -161,33 +194,25 @@ class ApplicationController extends Controller
 
             $validateCheckSumNum = CheckSum::isChecksumValid($checksum, $originalCheckSumNum);
 
+            $logModel = new IncomingMessageLog();
+            $messageModel = new IncomingMessage();
+
+            $data = $request->validated();
+            $data['nok_contact'] = $data['next_of_kin_contact'];
+            $data['funding_source'] = $data['fsource'];
+            $data['maturity_date'] = $data['mat_date'];
+            unset($data['next_of_kin_contact']);
+            unset($data['fsource']);
+            unset($data['mat_date']);
+            $logData = CommonTask::pushData($data, $logModel);
+            $data['log_id'] = $logData->log_id;
+            $messageData = CommonTask::pushData($data, $messageModel);
+
+            $incomingLog = IncomingMessageLog::where('log_id', $data['log_id'])->first();
+            $incomingMessage = IncomingMessage::where('log_id', $data['log_id'])->first();
+
             if ($validateCheckSumNum > 0) {
                 $application->update($request->validated());
-
-                $incomingMessage = IncomingMessage::create([
-                    'acct_no' => $request->acct_no,
-                    'login_id' => $request->login_id,
-                    'tdate' => $request->tdate,
-                    'sec_code' => $request->sec_code,
-                    'amt' => $request->amt,
-                    'next_of_kin' => $request->next_of_kin,
-                    'nok_contact' => $request->next_of_kin_contact,
-                    'trace_id' => $request->trace_id,
-                    'bank_code' => $request->bank_code,
-                    'txn_type' => $request->txn_type,
-                    'country_code' => $request->country_code,
-                    'echannel' => $request->echannel,
-                    'funding_source' => $request->fsource,
-                    'app_module' => $request->app_module,
-                    'mobile_network' => $request->mno,
-                    'cost' => $request->cost,
-                    'face_value' => $request->face_value,
-                    'int_rate' => $request->int_rate,
-                    'disc_rate' => $request->disc_rate,
-                    'value_date' => $request->value_date,
-                    'maturity_date' => $request->mat_date,
-                    'inv_amt_type' => $request->inv_amt_type
-                ]);
 
                 $response = response()->json([
                     'status' => 'success',
@@ -195,12 +220,20 @@ class ApplicationController extends Controller
                     'message' => 'Application updated successfully'
                 ]);
 
-                IncomingMessageLog::create([
-                    'incoming_messages_id' => $incomingMessage->inc_messages_id,
+                $incomingLog->update([
                     'request_url' => $request->url(),
                     'response_url' => $request->fullUrl(),
                     'response_code' => $response->status(),
-                    'response_message' => $response->getData()->message
+                    'response_message' => $response->getData()->message,
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'success'
+                ]);
+
+                $incomingMessage->update([
+                    'incoming_checksum' => $checksum,
+                    'checksum' => $originalCheckSumNum,
+                    'checksum_status' => 'success'
                 ]);
 
                 return $response;

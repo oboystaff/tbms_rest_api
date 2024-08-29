@@ -30,12 +30,18 @@ class TokenExpiryMiddleware
             return LogError::createLogError($request, 'Invalid token.');
         }
 
-        $expirationTime = env('tokenExpirationTime');
+        $expirationTime = (int) env('TOKEN_EXPIRATION_TIME', 2); // Default to 15 minutes if not set
         $createdAt = new DateTime($accessToken->created_at);
 
         // Add the expiration time to the creation time
-        $interval = new DateInterval('PT' . (int)$expirationTime . 'M');
+        $interval = new DateInterval('PT' . $expirationTime . 'M');
         $createdAt->add($interval);
+
+        // Log for debugging
+        \Log::info('Token Created At: ' . $accessToken->created_at);
+        \Log::info('Token Expiration Time: ' . $expirationTime . ' minutes');
+        \Log::info('Token Expiry DateTime: ' . $createdAt->format('Y-m-d H:i:s'));
+        \Log::info('Current DateTime: ' . (new DateTime())->format('Y-m-d H:i:s'));
 
         // Check if the current time is past the expiration time
         if ($createdAt < new DateTime()) {

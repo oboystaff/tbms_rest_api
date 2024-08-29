@@ -26,10 +26,17 @@ class CreateAccountRequest extends FormRequest
             'login_id' => ['required', 'string'],
             'bank_code' => ['required', 'string'],
             'account_number' => ['required', 'string', 'unique:tBillAccount,account_number'],
-            'action' => ['required', 'string'],
+            'action' => ['required', 'string', 'in:ADD,REMOVE'],
             'echannel' => ['required', 'string'],
             'trace_id' => ['required', 'string', 'unique:tBillAccount,trace_id'],
             'txn_type' => ['required', 'string']
+        ];
+    }
+
+    public function messages()
+    {
+        return [
+            'action.in' => 'The action field must be either ADD or REMOVE.',
         ];
     }
 }

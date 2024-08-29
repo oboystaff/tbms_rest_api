@@ -14,16 +14,16 @@ class LogError
         $date = new DateTime();
         $formattedDate = $date->format('d-m-Y');
 
-        $incomingMessage = IncomingMessage::create([
-            'tdate' => $formattedDate
-        ]);
-
-        IncomingMessageLog::create([
+        $log = IncomingMessageLog::create([
             'request_url' => $request->url(),
             'response_code' => 422,
             'response_message' => $message,
-            'incoming_messages_id' => $incomingMessage->inc_messages_id,
-            'response_url' => $request->fullUrl(),
+            'response_url' => $request->fullUrl()
+        ]);
+
+        IncomingMessage::create([
+            'log_id' => $log->log_id,
+            'tdate' => $formattedDate
         ]);
 
         return response()->json([
